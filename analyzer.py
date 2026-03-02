@@ -190,7 +190,12 @@ def fetch_stock_data(
         # 5MA方向（True=上向き, False=下向き）
         df["MA5_up"] = df["MA5_slope"] > 0
 
-        company_name = tk.info.get("longName", ticker_input)
+        # tk.info はレートリミットで失敗しやすいため個別にtry
+        try:
+            company_name = tk.info.get("longName", ticker_input)
+        except Exception:
+            company_name = ticker_input
+
         return df, symbol, company_name
 
     except Exception as e:
