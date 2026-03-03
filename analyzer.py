@@ -114,6 +114,18 @@ class PatternResult:
 
 
 @dataclass
+class CandlestickSignal:
+    """直近ロウソク足のシグナル"""
+    name: str
+    bias: str                 # "強気" | "弱気" | "中立"
+    status: str               # "成立" | "予測"
+    signal_text: str = ""
+    description: str = ""
+    trigger: str = ""
+    confidence: float = 0.0
+
+
+@dataclass
 class AnalysisResult:
     """分析結果の統合"""
     ticker: str
@@ -128,6 +140,8 @@ class AnalysisResult:
     current_price: float = 0.0
     company_name: str = ""
     indicators: dict = field(default_factory=dict)      # 一般テクニカル指標
+    recent_candlestick_patterns: list = field(default_factory=list)
+    candlestick_predictions: list = field(default_factory=list)
 
 
 # ────────────────────────────────────────────
@@ -745,11 +759,9 @@ def detect_double_bottom(df: pd.DataFrame) -> PatternResult:
         return result
 
     recent_lows = df["Low"].iloc[-40:].values
-    x = np.arange(len(recent_lows))
-
-    # 局所最小値を探す
-    from scipy.signal import argrelextrema
     try:
+        # scipy がない環境でも全体分析が止まらないようにする
+        from scipy.signal import argrelextrema
         local_mins = argrelextrema(recent_lows, np.less, order=5)[0]
         if len(local_mins) >= 2:
             b1 = recent_lows[local_mins[-2]]
@@ -762,6 +774,348 @@ def detect_double_bottom(df: pd.DataFrame) -> PatternResult:
         pass
 
     return result
+
+
+# ────────────────────────────────────────────
+# 直近2本のロウソク足分析
+# ────────────────────────────────────────────
+
+def _candle_metrics(row: pd.Series) -> dict:
+    """1本分のロウソク足を判定しやすい形にする"""
+    op = float(row["Open"])
+    hi = float(row["High"])
+    lo = float(row["Low"])
+    cl = float(row["Close"])
+    total_range = max(hi - lo, 1e-9)
+    body = abs(cl - op)
+    upper = hi - max(op, cl)
+    lower = min(op, cl) - lo
+    midpoint = (op + cl) / 2
+
+    return {
+        "open": op,
+        "high": hi,
+        "low": lo,
+        "close": cl,
+        "range": total_range,
+        "body": body,
+        "upper": upper,
+        "lower": lower,
+        "midpoint": midpoint,
+        "body_ratio": body / total_range,
+        "bullish": cl > op,
+        "bearish": cl < op,
+        "doji": body / total_range < 0.1,
+    }
+
+
+def analyze_recent_candlesticks(df: pd.DataFrame) -> tuple[list[CandlestickSignal], list[CandlestickSignal]]:
+    """
+    直近2本のロウソク足を使って、
+    1) 現在成立している2本パターン
+    2) 次の1本で成立しうる予測パターン
+    を返す
+    """
+    if len(df) < 2:
+        return [], []
+
+    prev = _candle_metrics(df.iloc[-2])
+    last = _candle_metrics(df.iloc[-1])
+    o1, h1, l1, cl1 = prev["open"], prev["high"], prev["low"], prev["close"]
+    o2, h2, l2, cl2 = last["open"], last["high"], last["low"], last["close"]
+    body1, body2 = prev["body"], last["body"]
+    range1, range2 = prev["range"], last["range"]
+    bear1, bull1 = prev["bearish"], prev["bullish"]
+    bear2, bull2 = last["bearish"], last["bullish"]
+    mid1 = prev["midpoint"]
+
+    current_signals: list[CandlestickSignal] = []
+    predictions: list[CandlestickSignal] = []
+
+    tol = max(0.02, max(range1, range2) * 0.05)
+    same_low = abs(l1 - l2) <= tol
+    same_high = abs(h1 - h2) <= tol
+    body_high1 = max(o1, cl1)
+    body_low1 = min(o1, cl1)
+    body_high2 = max(o2, cl2)
+    body_low2 = min(o2, cl2)
+    upper_shadow2 = max(0.0, h2 - body_high2)
+    lower_shadow2 = max(0.0, body_low2 - l2)
+
+    bullish_engulfing = bear1 and bull2 and o2 <= cl1 and cl2 >= (o1 - tol)
+    bearish_engulfing = bull1 and bear2 and o2 >= cl1 and cl2 <= o1
+    bullish_harami = bear1 and bull2 and o2 >= cl1 and o2 <= o1 and cl2 >= cl1 and cl2 <= o1
+    bearish_harami = bull1 and bear2 and o2 <= cl1 and o2 >= o1 and cl2 <= cl1 and cl2 >= o1
+
+    def add_signal(target: list[CandlestickSignal], name: str, bias: str, status: str,
+                   signal_text: str, description: str, trigger: str, confidence: float) -> None:
+        target.append(CandlestickSignal(
+            name=name,
+            bias=bias,
+            status=status,
+            signal_text=signal_text,
+            description=description,
+            trigger=trigger,
+            confidence=confidence,
+        ))
+
+    if (
+        range2 > 0
+        and body2 / range2 <= 0.25
+        and upper_shadow2 >= body2
+        and lower_shadow2 >= body2
+    ):
+        add_signal(current_signals, "十字線 (Doji)", "中立", "成立", "⚪ 転換示唆",
+                   "始値と終値がほぼ同じ。相場の迷い",
+                   "転換の示唆。次の足の方向で確認", 0.58)
+
+    if (
+        range2 > 0
+        and body2 / range2 <= 0.2
+        and lower_shadow2 >= body2 * 3
+        and upper_shadow2 <= max(body2, 0.05)
+    ):
+        add_signal(current_signals, "トンボ", "中立", "成立", "⚪ 迷い",
+                   "下ヒゲが長く、安値圏からの戻し",
+                   "下げ止まり候補。次足が陽線なら強め", 0.6)
+
+    if (
+        range2 > 0
+        and body2 / range2 <= 0.2
+        and upper_shadow2 >= body2 * 3
+        and lower_shadow2 <= max(body2, 0.05)
+    ):
+        add_signal(current_signals, "トウバ（墓石十字）", "弱気", "成立", "🔴 弱気転換",
+                   "上ヒゲが長く、高値圏で強く売られた形",
+                   "高値拒否。次足が陰線なら弱気確認", 0.72)
+
+    if (
+        range2 > 0
+        and body2 / range2 <= 0.35
+        and upper_shadow2 >= body2 * 2.5
+        and lower_shadow2 <= max(body2 * 0.5, 0.05)
+    ):
+        add_signal(current_signals, "逆ハンマー", "弱気", "成立", "🔴 弱気転換",
+                   "上ヒゲが長く、戻り売り圧力が強い",
+                   "次足が陰線なら弱気寄り", 0.66)
+
+    if (
+        body1 > 0
+        and body2 <= max(body1 * 0.35, 0.1)
+        and body2 / range2 <= 0.25
+        and body_high2 <= body_high1
+        and body_low2 >= body_low1
+    ):
+        add_signal(current_signals, "はらみ寄せ線", "中立", "成立", "⚪ 転換示唆",
+                   "迷いが極まる。反転近し",
+                   "前日が陰線なら強気、陽線なら弱気に傾きやすい", 0.62)
+
+    if (
+        bull2
+        and body2 / range2 >= 0.64
+        and cl2 > cl1
+        and cl2 >= o1
+        and not (bull1 and bull2 and o2 >= cl1)
+    ):
+        add_signal(current_signals, "大陽線", "強気", "成立", "🟢 強気",
+                   "実体が大きい陽線。買い圧力が強い",
+                   "強い上昇圧力", 0.75)
+
+    if (
+        bear2
+        and body2 / range2 >= 0.64
+        and cl2 < cl1
+        and cl2 <= o1
+        and not (bear1 and bear2 and o2 <= cl1)
+    ):
+        add_signal(current_signals, "大陰線", "弱気", "成立", "🔴 弱気",
+                   "実体が大きい陰線。売り圧力が強い",
+                   "強い下落圧力", 0.75)
+
+    if bullish_engulfing:
+        add_signal(current_signals, "包み線（抱き線）", "強気", "成立", "🟢 強気転換",
+                   "最強底打ち。前日陰線を飲み込む大陽線",
+                   "翌日に陽線が出現し当日高値を上回れば強気確認", 0.84)
+
+    if bearish_engulfing:
+        add_signal(current_signals, "陰の陽包み", "弱気", "成立", "🔴 弱気転換",
+                   "最強下落。前日陽線を飲み込む大陰線",
+                   "翌日に陰線が出現し当日安値を下回れば弱気確認", 0.84)
+
+    if bullish_harami:
+        add_signal(current_signals, "はらみ線（強気）", "強気", "成立", "🟢 強気転換",
+                   "下落エネルギー枯渇。反転示唆",
+                   "翌日に陽線が出現し前日高値を上抜ければ強気確認", 0.7)
+
+    if bearish_harami:
+        add_signal(current_signals, "陰の陽はらみ", "弱気", "成立", "🔴 弱気転換",
+                   "上昇失速。下落の予兆",
+                   "翌日に陰線が出現し前日安値を下抜ければ弱気確認", 0.7)
+
+    if bearish_harami and body1 / range1 >= 0.6:
+        add_signal(current_signals, "陽の陰はらみ", "強気", "成立", "🟢 強気継続",
+                   "健全な小休止。上昇トレンド中の一時的な利益確定",
+                   "翌日に陽線で前日高値を上抜ければ上昇再開", 0.64)
+
+    if bull1 and bear2 and o2 < min(o1, cl1) and body2 / range2 >= 0.65:
+        add_signal(current_signals, "行き違い線（弱気・キッキング）", "弱気", "成立", "🔴 弱気転換",
+                   "パニック的な売りの継続を確認",
+                   "翌日に陰線が継続すれば下落トレンド確認", 0.74)
+
+    if bear1 and bull2 and same_low:
+        add_signal(current_signals, "毛抜き底", "強気", "成立", "🟢 強気転換",
+                   "強固な下値支持。同じ安値で反発",
+                   "翌日に陽線が出現すれば底値確認", 0.73)
+
+    if bull1 and bear2 and same_high:
+        add_signal(current_signals, "毛抜き天井", "弱気", "成立", "🔴 弱気転換",
+                   "強烈レジスタンス。頭打ち。同じ高値で反落",
+                   "翌日に陰線が出現すれば天井確認", 0.73)
+
+    if (
+        bear1 and bull2 and cl2 > mid1
+        and (same_low or cl2 < o1)
+        and upper_shadow2 <= body2 * 0.5
+    ):
+        add_signal(current_signals, "タスキ底", "強気", "成立", "🟢 強気転換",
+                   "下落末期、緩やかな底打ち",
+                   "翌日に陽線が継続すれば反転確認", 0.67)
+
+    if bear1 and bull2 and cl2 > cl1 and cl2 <= mid1:
+        add_signal(current_signals, "差し込み線", "弱気", "成立", "🔴 弱気継続",
+                   "買いが弱く半値回復ならず。高値の強烈な拒絶",
+                   "翌日に陰線が出現すれば下落継続確認", 0.65)
+
+    if bear1 and bull2 and abs(cl2 - cl1) <= min(tol, max(0.05, body1 * 0.25)):
+        add_signal(current_signals, "出会い線（強気・逆襲線）", "強気", "成立", "🟢 強気転換",
+                   "緩やかな反転兆し。売りを強い買いで押し戻した状態",
+                   "翌日に陽線が出現し当日高値を上回れば強気確認", 0.66)
+
+    if bear1 and bull2 and cl2 < cl1 and cl2 >= (cl1 - body1 * 0.15):
+        add_signal(current_signals, "入り首線", "弱気", "成立", "🔴 弱気継続",
+                   "あて首同様、反発力が弱い",
+                   "翌日に陰線が出現すれば下落継続確認", 0.63)
+
+    if bear1 and bull2 and cl2 > o1 and body2 / range2 >= 0.6:
+        add_signal(current_signals, "最後の抱き線（弱気）", "弱気", "成立", "🔴 弱気転換",
+                   "最後の買い占め。ダマシ急落に注意",
+                   "翌日に陰線が出現すれば天井確認", 0.71)
+
+    if bull1 and bull2 and o2 >= cl1:
+        add_signal(current_signals, "上放れ並び赤", "強気", "成立", "🟢 強気継続",
+                   "上昇エネルギー極めて強い。窓開け上昇後に連続陽線",
+                   "翌日も陽線が続き高値更新すれば強気確認", 0.78)
+
+    if (
+        bull2
+        and range2 > 0
+        and body2 / range2 <= 0.21
+        and upper_shadow2 >= body2 * 2.5
+        and upper_shadow2 >= lower_shadow2 * 2
+    ):
+        add_signal(current_signals, "ベアリッシュ・ピンバー", "弱気", "成立", "🔴 弱気転換",
+                   "高値の強烈な拒絶（リジェクション）。高値を断固として拒否",
+                   "高値圏の失速シグナル", 0.69)
+
+    if (
+        range2 > 0
+        and body2 / range2 <= 0.21
+        and upper_shadow2 > body2
+        and lower_shadow2 > body2
+    ):
+        add_signal(current_signals, "コマ", "中立", "成立", "⚪ 迷い",
+                   "小さい実体に上下ヒゲ。方向感なし",
+                   "ブレイク待ち", 0.5)
+
+    if not current_signals:
+        add_signal(current_signals, "明確な2本パターンなし", "中立", "成立", "⚪ 様子見",
+                   "直近2本だけでは強い反転型はまだ確定していません。",
+                   "次の1本の値動き待ち", 0.25)
+
+    if bullish_harami:
+        add_signal(predictions, "スリーインサイドアップ (Three Inside Up)", "強気", "予測", "🟢 強気転換",
+                   "陽のはらみ足が出現。安全な反転確認パターン",
+                   f"翌日に陽線が出現し、1本目の高値（{body_high1:.2f}）を上抜ければ完成", 0.76)
+
+    if bearish_harami:
+        add_signal(predictions, "スリーインサイドダウン (Three Inside Down)", "弱気", "予測", "🔴 弱気転換",
+                   "陰のはらみ足が出現。はらみ線の下抜けを3本目で確認",
+                   f"翌日に陰線が出現し、1本目の安値（{body_low1:.2f}）を下抜ければ完成", 0.76)
+
+    if bearish_harami and body1 / range1 >= 0.6:
+        add_signal(predictions, "インサイドバーの上抜け（陽の陰はらみブレイク）", "強気", "予測", "🟢 強気継続",
+                   "大陽線+内包する小陰線。トレンド継続の王道セットアップ",
+                   f"翌日に陽線で1本目高値（{body_high1:.2f}）を上抜ければブレイク完成", 0.7)
+
+    if bearish_harami and body1 / range1 >= 0.6:
+        add_signal(predictions, "インサイドバーの弱気ブレイク", "弱気", "予測", "🔴 弱気転換",
+                   "大陽線+内包する小陰線。強烈なエネルギー圧縮からの買い崩れ",
+                   f"翌日に陰線で1本目安値（{body_low1:.2f}）を下抜ければブレイク完成", 0.7)
+
+    if bullish_engulfing:
+        add_signal(predictions, "スリーアウトサイドアップ (Three Outside Up)", "強気", "予測", "🟢 強気転換",
+                   "陽の包み足が出現。強い反転確認パターン",
+                   f"翌日に陽線が出現し、2本目の高値（{body_high2:.2f}）を上抜ければ完成", 0.8)
+
+    if bearish_engulfing:
+        add_signal(predictions, "スリーアウトサイドダウン (Three Outside Down)", "弱気", "予測", "🔴 弱気転換",
+                   "陰の包み足が出現。包み足の勢い継続を確認",
+                   f"翌日に陰線が出現し、2本目の安値（{body_low2:.2f}）を下抜ければ完成", 0.8)
+
+    if bear1 and bull2 and (
+        (abs(l1 - l2) <= max(0.02, max(range1, range2) * 0.1) and body1 > 0 and body2 >= body1 * 0.75) or
+        (l2 < l1 and cl2 > cl1)
+    ):
+        add_signal(predictions, "スティック・サンドイッチ（強気）", "強気", "予測", "🟢 強気転換",
+                   "陰線+陽線。短期的なW底を形成する可能性",
+                   f"翌日に陰線が出現し安値が1本目安値（{l1:.2f}）付近で止まれば完成", 0.66)
+
+    if bull1 and bear2 and (
+        (abs(h1 - h2) <= max(0.02, max(range1, range2) * 0.1) and body1 > 0 and body2 >= body1 * 0.75) or
+        (h2 > h1 and cl2 < cl1)
+    ):
+        add_signal(predictions, "スティック・サンドイッチ（弱気）", "弱気", "予測", "🔴 弱気転換",
+                   "陽線+陰線。高値の重さを確認、反落",
+                   f"翌日に陽線が出現し高値が1本目高値（{h1:.2f}）付近で止まれば完成", 0.66)
+
+    if bear1 and bull2 and o2 < l1 and cl2 <= cl1:
+        add_signal(predictions, "下放れタスキ線", "弱気", "予測", "🔴 弱気継続",
+                   "陰線→ギャップダウン後の陽線だが窓を埋められず。窓埋め後の下落再開",
+                   f"翌日に陰線で2本目安値（{l2:.2f}）を割れば下落再開", 0.72)
+
+    if bear1 and bear2 and cl2 < cl1:
+        add_signal(predictions, "黒三兵 / 三羽烏 (Three Black Crows)", "弱気", "予測", "🔴 弱気継続",
+                   "連続陰線で安値引け。買い手が逃げ出し、下落開始",
+                   f"翌日に陰線が出現し、さらに安値引け（<{cl2:.2f}）で完成", 0.76)
+
+    if bull1 and bull2 and cl2 > cl1:
+        add_signal(predictions, "赤三兵 (Three White Soldiers)", "強気", "予測", "🟢 強気継続",
+                   "連続陽線で高値引け。上昇トレンド発生",
+                   f"翌日に陽線が出現し、さらに高値引け（>{cl2:.2f}）で完成", 0.76)
+
+    if bull1 and bull2 and o2 >= cl1 and cl2 > cl1:
+        add_signal(predictions, "上放れ並び赤（強気）", "強気", "予測", "🟢 強気継続",
+                   "窓開け上昇後に連続陽線。上昇エネルギー極めて強い",
+                   f"翌日も陽線が続き高値更新（>{h2:.2f}）すれば強気確認", 0.78)
+
+    if bull1 and bull2 and h2 < h1 and cl2 < cl1 and body2 <= body1 * 0.5:
+        add_signal(predictions, "南の三つ星（弱気）", "弱気", "予測", "🔴 弱気転換",
+                   "陽線が縮小、高値切り下げ。買い手が力尽き上値が重い",
+                   "翌日にさらに小さい陽線（または陰線）で高値を更新できなければ完成", 0.62)
+
+    if not predictions:
+        add_signal(predictions, "次の1本待ち", "中立", "予測", "⚪ 様子見",
+                   "3本目で強い型になる前段階ではありません。次の足で方向確認です。",
+                   f"高値 {h2:.2f} 超えで上寄り、安値 {l2:.2f} 割れで下寄り", 0.4)
+
+    deduped_predictions = []
+    seen_names = set()
+    for signal in predictions:
+        if signal.name not in seen_names:
+            deduped_predictions.append(signal)
+            seen_names.add(signal.name)
+
+    return current_signals, deduped_predictions[:4]
 
 
 # ────────────────────────────────────────────
@@ -821,6 +1175,7 @@ def run_full_analysis(
     sr_levels = find_support_resistance(df, highs, lows)
     gaps = detect_gaps(df)
     patterns = analyze_patterns(df)
+    recent_candlestick_patterns, candlestick_predictions = analyze_recent_candlesticks(df)
 
     # 現在の5MA（損切り基準）
     current_ma5 = float(df["MA5"].iloc[-1]) if not pd.isna(df["MA5"].iloc[-1]) else 0
@@ -843,6 +1198,8 @@ def run_full_analysis(
         current_price=current_price,
         company_name=company_name,
         indicators=indicators,
+        recent_candlestick_patterns=recent_candlestick_patterns,
+        candlestick_predictions=candlestick_predictions,
     )
 
 

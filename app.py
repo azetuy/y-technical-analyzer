@@ -465,6 +465,52 @@ else:
                     unsafe_allow_html=True
                 )
 
+        st.markdown("---")
+        st.markdown('<div class="section-header">直近2本 + 次の1本予測</div>', unsafe_allow_html=True)
+
+        recent_bars = result.df.iloc[-2:]
+        bar_labels = []
+        for idx, (_, row) in enumerate(recent_bars.iterrows(), start=1):
+            is_up = float(row["Close"]) >= float(row["Open"])
+            direction = "陽線" if is_up else "陰線"
+            color = "#00CC66" if is_up else "#FF6666"
+            date_label = row.name.strftime("%Y-%m-%d")
+            bar_labels.append(
+                f'<div style="padding:8px 10px; border:1px solid #2D3F4F; border-radius:8px; margin:4px 0;">'
+                f'<div style="font-size:11px; color:#8899AA;">{idx}本目: {date_label}</div>'
+                f'<div style="color:{color}; font-weight:bold;">{direction}</div>'
+                f'<div style="font-size:12px; color:#8899AA;">'
+                f'O {float(row["Open"]):.2f} / H {float(row["High"]):.2f} / '
+                f'L {float(row["Low"]):.2f} / C {float(row["Close"]):.2f}'
+                f'</div></div>'
+            )
+        st.markdown("".join(bar_labels), unsafe_allow_html=True)
+
+        for signal in result.recent_candlestick_patterns:
+            tone = "🎯" if signal.bias == "強気" else "⚠️" if signal.bias == "弱気" else "•"
+            card_class = "pattern-detected" if signal.bias != "中立" else "pattern-none"
+            st.markdown(
+                f'<div class="{card_class}">{tone} <b>{signal.name}</b><br>'
+                f'<small style="color:#FFD700;">{signal.signal_text}</small><br>'
+                f'<small style="color:#8899AA;">{signal.description}<br>{signal.trigger}</small></div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown("**次の1本の予測条件**")
+        for signal in result.candlestick_predictions:
+            tone = "🟢" if signal.bias == "強気" else "🔴" if signal.bias == "弱気" else "⚪"
+            border = "#00CC66" if signal.bias == "強気" else "#FF6666" if signal.bias == "弱気" else "#888888"
+            st.markdown(
+                f"""<div style="background:rgba(30,42,53,0.6); border-left:4px solid {border};
+                border-radius:8px; padding:10px; margin:6px 0;">
+                <div style="font-weight:bold;">{tone} {signal.name}</div>
+                <div style="font-size:12px; color:#FFD700; margin-top:4px;">{signal.signal_text}</div>
+                <div style="font-size:12px; color:#8899AA; margin-top:4px;">{signal.description}</div>
+                <div style="font-size:12px; color:{border}; margin-top:6px;">条件: {signal.trigger}</div>
+                </div>""",
+                unsafe_allow_html=True
+            )
+
         # 横ばい帯
         df = result.df
         range_zones = detect_range_zones(df)

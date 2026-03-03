@@ -6,7 +6,7 @@ cd /d "%~dp0"
 
 echo ============================================
 echo  Y式 株価パターン分析ツール
-echo  起動: http://localhost:8502
+echo  起動: http://localhost:8501
 echo ============================================
 echo.
 
@@ -25,9 +25,12 @@ if not exist ".venv\Scripts\python.exe" (
     echo.
 )
 
-echo ブラウザで http://localhost:8502 を開いてください
+echo ブラウザを自動で開きます...
 echo 終了するには Ctrl+C を押してください
 echo.
+
+REM 少し待ってからブラウザを開く
+start "" cmd /c "timeout /t 4 /nobreak > nul && start http://localhost:8501"
 
 .venv\Scripts\streamlit run app.py ^
     --server.port 8501 ^
