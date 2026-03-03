@@ -1,6 +1,6 @@
-"""
+﻿"""
 Plotlyチャート生成モジュール
-よろち式テクニカル分析ツール用
+Y式テクニカル分析ツール用
 """
 
 import pandas as pd
@@ -35,8 +35,8 @@ COLORS = {
     "resistance_weak": "#FF9999",    # 弱い抵抗線
     "support_strong": "#3366FF",   # 強い支持線
     "support_weak": "#9999FF",     # 弱い支持線
-    "high_mark": "#FF6600",        # よろち式高値マーク
-    "low_mark": "#0066FF",         # よろち式安値マーク
+    "high_mark": "#FF6600",        # Y式高値マーク
+    "low_mark": "#0066FF",         # Y式安値マーク
     "kaitetsu": "#00FF88",         # 買鉄シグナル
     "gap_up": "rgba(0,200,100,0.1)",   # ギャップアップ背景
     "gap_down": "rgba(255,50,50,0.1)",  # ギャップダウン背景
@@ -63,7 +63,7 @@ def create_main_chart(result: AnalysisResult, show_sr: bool = True,
         result: 分析結果
         show_sr: 支持線・抵抗線を表示するか
         show_gaps: ギャップを表示するか
-        show_highs_lows: よろち式高値安値マークを表示するか
+        show_highs_lows: Y式高値安値マークを表示するか
         show_kaitetsu: 買鉄シグナルを表示するか
     """
     df = result.df
@@ -145,7 +145,7 @@ def create_main_chart(result: AnalysisResult, show_sr: bool = True,
     if show_sr:
         _add_support_resistance(fig, result.support_resistance, df)
 
-    # ── よろち式 高値安値マーク ─────────────
+    # ── Y式 高値安値マーク ─────────────
     if show_highs_lows:
         _add_high_low_marks(fig, result.high_low_marks)
 
@@ -174,7 +174,7 @@ def create_main_chart(result: AnalysisResult, show_sr: bool = True,
             row=1, col=1
         )
 
-    # ── 5MA方向転換マーク（よろち式高値安値の起点）──
+    # ── 5MA方向転換マーク（Y式高値安値の起点）──
     _add_ma5_direction_changes(fig, df)
 
     # ── ボリンジャーバンド ──────────────────
@@ -295,11 +295,11 @@ def _add_support_resistance(
 
 
 # ────────────────────────────────────────────
-# よろち式高値安値マークの追加
+# Y式高値安値マークの追加
 # ────────────────────────────────────────────
 
 def _add_high_low_marks(fig: go.Figure, high_low_marks: dict) -> None:
-    """よろち式の高値・安値をチャートにマーク"""
+    """Y式の高値・安値をチャートにマーク"""
     highs = high_low_marks.get("highs", [])
     lows = high_low_marks.get("lows", [])
 
@@ -323,8 +323,8 @@ def _add_high_low_marks(fig: go.Figure, high_low_marks: dict) -> None:
                 text=["H" for _ in dates_h],
                 textposition="top center",
                 textfont=dict(color=COLORS["high_mark"], size=9),
-                name="よろち式高値",
-                hovertemplate="よろち式高値: %{y:.2f}<br>%{x}<extra></extra>",
+                name="Y式高値",
+                hovertemplate="Y式高値: %{y:.2f}<br>%{x}<extra></extra>",
             ),
             row=1, col=1
         )
@@ -345,8 +345,8 @@ def _add_high_low_marks(fig: go.Figure, high_low_marks: dict) -> None:
                 text=["L" for _ in dates_l],
                 textposition="bottom center",
                 textfont=dict(color=COLORS["low_mark"], size=9),
-                name="よろち式安値",
-                hovertemplate="よろち式安値: %{y:.2f}<br>%{x}<extra></extra>",
+                name="Y式安値",
+                hovertemplate="Y式安値: %{y:.2f}<br>%{x}<extra></extra>",
             ),
             row=1, col=1
         )
@@ -357,7 +357,7 @@ def _add_high_low_marks(fig: go.Figure, high_low_marks: dict) -> None:
 # ────────────────────────────────────────────
 
 def _add_ma5_direction_changes(fig: go.Figure, df: pd.DataFrame) -> None:
-    """5MAの方向転換点（よろち式高値安値の区切り）をマーク"""
+    """5MAの方向転換点（Y式高値安値の区切り）をマーク"""
     if "MA5_up" not in df.columns:
         return
 

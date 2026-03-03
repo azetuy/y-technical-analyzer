@@ -1,5 +1,5 @@
-"""
-よろち式 株価パターン分析ツール
+﻿"""
+Y式 株価パターン分析ツール
 Streamlit メインアプリ
 
 起動方法:
@@ -28,7 +28,7 @@ from chart import (
 # ────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="よろち式 株価パターン分析",
+    page_title="Y式 株価パターン分析",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -124,7 +124,7 @@ st.markdown("""
 # ────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## 📈 よろち式 分析ツール")
+    st.markdown("## 📈 Y式 分析ツール")
     st.markdown("---")
 
     # 銘柄入力
@@ -163,7 +163,7 @@ with st.sidebar:
     st.markdown("### 表示設定")
     show_sr = st.checkbox("支持線・抵抗線", value=True)
     show_gaps = st.checkbox("ギャップ（窓）", value=True)
-    show_highs_lows = st.checkbox("よろち式高値安値", value=True)
+    show_highs_lows = st.checkbox("Y式高値安値", value=True)
     show_kaitetsu = st.checkbox("買鉄シグナル", value=True)
     show_bb = st.checkbox("ボリンジャーバンド", value=True)
     show_ichimoku = st.checkbox("一目均衡表", value=False)
@@ -190,8 +190,8 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # よろちさんの格言
-    st.markdown("### よろちさんの言葉")
+    # Yさんの格言
+    st.markdown("### Yさんの言葉")
     quotes = [
         "「早くお手上げした方が勝ち」",
         "「事実（ライン）に降参する勇気を持つ」",
@@ -228,9 +228,9 @@ result: AnalysisResult = st.session_state.result
 
 if result is None:
     # ウェルカム画面
-    st.markdown("## 📈 よろち式 株価パターン分析ツール")
+    st.markdown("## 📈 Y式 株価パターン分析ツール")
     st.markdown("""
-    **よろちさん「チャートの詠み方 極」に基づくテクニカル分析ツールです。**
+    **Yさん「チャートの詠み方 極」に基づくテクニカル分析ツールです。**
 
     ---
 
@@ -239,11 +239,11 @@ if result is None:
     | 機能 | 説明 |
     |------|------|
     | 🟢 **トレンド判定** | 上昇/横ばい/下落の3フェーズを20ヶ月線で判定 |
-    | 🎯 **買鉄チェック** | よろち式5条件を自動チェック |
+    | 🎯 **買鉄チェック** | Y式5条件を自動チェック |
     | 📏 **支持線・抵抗線** | 高値安値ラインを自動抽出・反応回数で強度評価 |
     | 🕳️ **ギャップ検出** | 窓（ギャップ）の自動検出・表示 |
     | 📊 **チャートパターン** | カップ・ウィズ・ハンドル、三角収束等を検出 |
-    | ⚖️ **R:Rシミュレーター** | リスクリワード比を計算（よろち式推奨1:5以上） |
+    | ⚖️ **R:Rシミュレーター** | リスクリワード比を計算（Y式推奨1:5以上） |
 
     ---
 
@@ -257,7 +257,7 @@ if result is None:
 
     st.markdown("---")
     st.markdown("""
-    ### よろち式の核心
+    ### Y式の核心
 
     > **「月足（20ヶ月線）が全ての土台。日足の判断は月足の支配下にある。」**
 
@@ -315,7 +315,7 @@ else:
                 sl_str,
                 delta=f"{sl_dist:.1f}%",
                 delta_color="inverse",
-                help="5MA終値割れで機械的に損切り（よろち式）"
+                help="5MA終値割れで機械的に損切り（Y式）"
             )
 
     # ── 総合シグナルバナー ─────────────────────
@@ -368,9 +368,9 @@ else:
     # ── 下段3列レイアウト ──────────────────────────
     col_left, col_center, col_right = st.columns([1, 1, 1])
 
-    # ────── 左列: よろち式分析 ───────────────────
+    # ────── 左列: Y式分析 ───────────────────
     with col_left:
-        st.markdown('<div class="section-header">よろち式 分析</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Y式 分析</div>', unsafe_allow_html=True)
 
         # トレンドサイクル
         cycle_fig = create_trend_cycle_chart(result.trend.phase)
@@ -403,7 +403,7 @@ else:
             | **100MA** | 週足20MA相当 |
             | **400MA** | 月足20MA相当 |
 
-            *日足で全て見ることで、週足切り替え不要で先読み可能（よろち式）*
+            *日足で全て見ることで、週足切り替え不要で先読み可能（Y式）*
             """)
 
     # ────── 中列: 買鉄チェック & パターン ──────────
@@ -527,7 +527,7 @@ else:
 
         # ── リスクリワードシミュレーター ────────────
         st.markdown('<div class="section-header">R:R シミュレーター</div>', unsafe_allow_html=True)
-        st.markdown("*よろち式推奨: リスクリワード 1:5以上*")
+        st.markdown("*Y式推奨: リスクリワード 1:5以上*")
 
         is_jp = ".T" in result.ticker
         currency = "¥" if is_jp else "$"
@@ -919,7 +919,7 @@ else:
     st.markdown("---")
     st.markdown("""
     <div style="text-align:center; color:#445566; font-size:11px; padding:10px;">
-    よろち式「チャートの詠み方 極」に基づく分析ツール<br>
+    Y式「チャートの詠み方 極」に基づく分析ツール<br>
     ⚠️ 本ツールは投資判断の補助ツールです。最終判断は自己責任でお願いします。
     </div>
     """, unsafe_allow_html=True)

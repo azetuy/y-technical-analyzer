@@ -1,4 +1,4 @@
-"""
+﻿"""
 バックテストエンジン
 
 設計方針:
@@ -212,7 +212,7 @@ def _calc_all_signals(df: pd.DataFrame) -> pd.DataFrame:
     sig["ma20_slope"] = sig["ma20"].diff(5)
     sig["ma5_up"] = sig["ma5_slope"] > 0
 
-    # ── 買鉄5条件（よろち式） ─────────────────
+    # ── 買鉄5条件（Y式） ─────────────────
     sig["k1"] = sig["ma5"] > sig["ma20"]                          # 5MA > 20MA
     sig["k2"] = sig["ma20_slope"] > 0                              # 20MA上向き
     sig["k3"] = (~sig["ma5_up"].shift(1).fillna(False)) & sig["ma5_up"]  # 5MA転換

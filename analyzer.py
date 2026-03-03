@@ -1,6 +1,6 @@
-"""
-よろち式テクニカル分析エンジン
-株価データを取得し、よろちさん講義に基づく各種分析を行う
+﻿"""
+Y式テクニカル分析エンジン
+株価データを取得し、Yさん講義に基づく各種分析を行う
 """
 
 import yfinance as yf
@@ -123,7 +123,7 @@ class AnalysisResult:
     support_resistance: list = field(default_factory=list)
     gaps: list = field(default_factory=list)
     patterns: list = field(default_factory=list)
-    high_low_marks: dict = field(default_factory=dict)  # よろち式高値安値マーク
+    high_low_marks: dict = field(default_factory=dict)  # Y式高値安値マーク
     stop_loss_price: float = 0.0   # 損切り価格（現在の5MA）
     current_price: float = 0.0
     company_name: str = ""
@@ -208,7 +208,7 @@ def fetch_stock_data(
 # ────────────────────────────────────────────
 
 def analyze_trend(df: pd.DataFrame) -> TrendResult:
-    """よろち式トレンド判定"""
+    """Y式トレンド判定"""
     result = TrendResult()
 
     if len(df) < 60:
@@ -273,7 +273,7 @@ def analyze_trend(df: pd.DataFrame) -> TrendResult:
 # ────────────────────────────────────────────
 
 def analyze_kaitetsu(df: pd.DataFrame) -> KaitetsuResult:
-    """よろち式 買鉄5条件を最新足でチェック"""
+    """Y式 買鉄5条件を最新足でチェック"""
     result = KaitetsuResult()
 
     if len(df) < 10:
@@ -330,12 +330,12 @@ def analyze_kaitetsu(df: pd.DataFrame) -> KaitetsuResult:
 
 
 # ────────────────────────────────────────────
-# よろち式 高値安値の抽出
+# Y式 高値安値の抽出
 # ────────────────────────────────────────────
 
 def extract_yorochi_highs_lows(df: pd.DataFrame) -> tuple[list, list]:
     """
-    よろち式定義に基づく高値安値を抽出
+    Y式定義に基づく高値安値を抽出
 
     高値: 5MAが「下→上」変化区間の最高値（ヒゲ含む）
     安値: 5MAが「上→下」変化区間の最低値（ヒゲ含む）
@@ -393,7 +393,7 @@ def find_support_resistance(
     tolerance_pct: float = 0.015
 ) -> list[SupportResistanceLevel]:
     """
-    よろち式高値安値から支持線・抵抗線を抽出し、
+    Y式高値安値から支持線・抵抗線を抽出し、
     反応回数・強度を算出する
     """
     levels = []
@@ -587,7 +587,7 @@ def detect_makenuki(df: pd.DataFrame, tolerance_pct: float = 0.005) -> list[tupl
 def detect_range_zones(df: pd.DataFrame, min_bars: int = 3, tolerance_pct: float = 0.02) -> list[dict]:
     """
     3本以上のローソク足が同価格帯に並ぶ横ばい帯を検出
-    （よろち式：横ばい帯も支持抵抗として扱う）
+    （Y式：横ばい帯も支持抵抗として扱う）
     """
     zones = []
     if len(df) < min_bars:
@@ -633,7 +633,7 @@ def detect_range_zones(df: pd.DataFrame, min_bars: int = 3, tolerance_pct: float
 def detect_cup_with_handle(df: pd.DataFrame) -> PatternResult:
     """
     カップ・ウィズ・ハンドルパターンを簡易検出
-    （よろちさん：週足の買鉄形）
+    （Yさん：週足の買鉄形）
     """
     result = PatternResult(name="カップ・ウィズ・ハンドル", detected=False)
     if len(df) < 60:
@@ -740,7 +740,7 @@ def detect_triangle(df: pd.DataFrame) -> PatternResult:
 def detect_double_bottom(df: pd.DataFrame) -> PatternResult:
     """ダブルボトム（W底）検出"""
     result = PatternResult(name="ダブルボトム（W底）", detected=False,
-                           description="※よろち式では「あまり強くない」パターン")
+                           description="※Y式では「あまり強くない」パターン")
     if len(df) < 30:
         return result
 
@@ -775,7 +775,7 @@ def calc_risk_reward(
 ) -> dict:
     """
     リスクリワード比を計算する
-    よろち式推奨: 1:5以上
+    Y式推奨: 1:5以上
     """
     risk = abs(entry - stop_loss)
     reward = abs(target - entry)
@@ -792,9 +792,9 @@ def calc_risk_reward(
         "ratio_label": f"1 : {ratio:.1f}",
         "ok": ratio >= 5.0,
         "comment": (
-            "✅ よろち式推奨のリスクリワード（1:5以上）を満たしています"
+            "✅ Y式推奨のリスクリワード（1:5以上）を満たしています"
             if ratio >= 5.0
-            else f"⚠️ リスクリワードが低い（1:{ratio:.1f}）。よろち式推奨は1:5以上"
+            else f"⚠️ リスクリワードが低い（1:{ratio:.1f}）。Y式推奨は1:5以上"
         )
     }
 
