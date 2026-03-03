@@ -67,6 +67,7 @@ def create_main_chart(result: AnalysisResult, show_sr: bool = True,
         show_kaitetsu: 買鉄シグナルを表示するか
     """
     df = result.df
+    long_term_label = getattr(result, "long_term_ma_label", "400日線")
 
     # サブプロット（メイン + 出来高）
     fig = make_subplots(
@@ -98,7 +99,7 @@ def create_main_chart(result: AnalysisResult, show_sr: bool = True,
         ("MA5",   "5MA",   COLORS["ma5"],   1.5),
         ("MA20",  "20MA",  COLORS["ma20"],  2.0),
         ("MA60",  "60MA",  COLORS["ma60"],  1.5),
-        ("MA400", "400MA\n(20ヶ月線)", COLORS["ma400"], 2.5),
+        ("MA400", long_term_label, COLORS["ma400"], 2.5),
     ]
 
     for col_name, label, color, width in ma_configs:

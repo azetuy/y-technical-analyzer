@@ -232,6 +232,9 @@ def ensure_result_compatibility(result_obj):
     if not hasattr(result_obj, "indicators") or result_obj.indicators is None:
         result_obj.indicators = {}
 
+    if not hasattr(result_obj, "long_term_ma_label") or not result_obj.long_term_ma_label:
+        result_obj.long_term_ma_label = getattr(getattr(result_obj, "trend", None), "long_term_ma_label", "400日線")
+
     df_obj = getattr(result_obj, "df", None)
     if df_obj is not None and not df_obj.empty:
         if not hasattr(result_obj, "current_price") or not result_obj.current_price:
@@ -242,6 +245,15 @@ def ensure_result_compatibility(result_obj):
                 result_obj.stop_loss_price = float(df_obj["MA5"].iloc[-1])
             else:
                 result_obj.stop_loss_price = 0.0
+
+        if hasattr(result_obj, "trend") and (
+            not hasattr(result_obj.trend, "long_term_ma_label") or not result_obj.trend.long_term_ma_label
+        ):
+            result_obj.trend.long_term_ma_label = df_obj.attrs.get("long_term_ma_label", result_obj.long_term_ma_label)
+
+        if hasattr(result_obj, "trend") and df_obj.attrs.get("long_term_ma_label"):
+            result_obj.long_term_ma_label = df_obj.attrs.get("long_term_ma_label")
+            result_obj.trend.long_term_ma_label = df_obj.attrs.get("long_term_ma_label")
 
         recent_candle_signals = getattr(result_obj, "recent_candlestick_patterns", None)
         predicted_candle_signals = getattr(result_obj, "candlestick_predictions", None)
@@ -321,6 +333,7 @@ if result is None:
 else:
     # ── ヘッダー情報 ─────────────────────────────
     ticker_display = result.ticker.replace(".T", "（日本株）")
+    long_term_label = getattr(result, "long_term_ma_label", getattr(result.trend, "long_term_ma_label", "400日線"))
 
     st.markdown(f"## {result.company_name}")
     st.markdown(f"**{ticker_display}** | {datetime.now().strftime('%Y-%m-%d %H:%M')} 更新")
@@ -336,7 +349,7 @@ else:
         st.metric(
             "トレンド",
             f"{result.trend.emoji} {result.trend.phase}",
-            help="20ヶ月線（400日線）ベースで判定"
+            help=f"20ヶ月線相当の長期線（{long_term_label}）ベースで判定"
         )
 
     with col_perf:
@@ -430,11 +443,13 @@ else:
         # トレンド詳細
         t = result.trend
         with st.expander("📊 トレンド詳細", expanded=True):
+            long_term_slope_label = "↗ 上向き" if t.ma400_up is True else "↘ 下向き" if t.ma400_up is False else "— 判定保留"
+            long_term_position_label = "上" if t.price_above_ma400 is True else "下" if t.price_above_ma400 is False else "— 判定保留"
             st.markdown(f"""
             | 項目 | 状態 |
             |------|------|
-            | 400日線の向き | {'↗ 上向き' if t.ma400_up else '↘ 下向き'} |
-            | 株価 vs 400日線 | {'上' if t.price_above_ma400 else '下'} |
+            | {long_term_label}の向き | {long_term_slope_label} |
+            | 株価 vs {long_term_label} | {long_term_position_label} |
             | 5MA傾き | {'↗' if t.ma5_slope > 0 else '↘'} |
             | 20MA傾き | {'↗' if t.ma20_slope > 0 else '↘'} |
             | 60MA傾き | {'↗' if t.ma60_slope > 0 else '↘'} |

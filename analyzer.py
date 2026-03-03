@@ -51,13 +51,14 @@ class KaitetsuResult:
 class TrendResult:
     """トレンド判定結果"""
     phase: str = "不明"          # "上昇" | "横ばい" | "下落"
-    ma400_up: bool = False       # 400日線が上向き
-    price_above_ma400: bool = False  # 株価が400日線上
+    ma400_up: Optional[bool] = None       # 長期線が上向き
+    price_above_ma400: Optional[bool] = None  # 株価が長期線上
     perfect_order: str = "なし"  # "最強" | "監視" | "エントリー" | "最弱" | "なし"
     ma5_slope: float = 0.0
     ma20_slope: float = 0.0
     ma60_slope: float = 0.0
     days_above_ma20: int = 0     # 20MA上に乗ってから何日経過
+    long_term_ma_label: str = "400日線"
 
     @property
     def emoji(self) -> str:
@@ -142,6 +143,7 @@ class AnalysisResult:
     indicators: dict = field(default_factory=dict)      # 一般テクニカル指標
     recent_candlestick_patterns: list = field(default_factory=list)
     candlestick_predictions: list = field(default_factory=list)
+    long_term_ma_label: str = "400日線"
 
 
 # ────────────────────────────────────────────
@@ -176,30 +178,40 @@ def fetch_stock_data(
         (DataFrame, ticker_symbol, company_name)
     """
     symbol = get_ticker_symbol(ticker_input)
+    long_term_settings = get_long_term_ma_settings(interval)
+    fetch_period = get_min_fetch_period(period, interval)
+    display_bars = get_display_bar_count(period, interval)
     try:
         tk = yf.Ticker(symbol)
-        df = tk.history(period=period, interval=interval, auto_adjust=True)
-        if df.empty:
+        df_full = tk.history(period=fetch_period, interval=interval, auto_adjust=True)
+        if df_full.empty:
             return None, symbol, ""
 
-        df.index = pd.to_datetime(df.index)
+        df_full.index = pd.to_datetime(df_full.index)
         # タイムゾーン除去（プロット用）
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
+        if df_full.index.tz is not None:
+            df_full.index = df_full.index.tz_localize(None)
 
-        df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+        df_full = df_full[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
         # 移動平均線を追加
-        df["MA5"] = df["Close"].rolling(5).mean()
-        df["MA20"] = df["Close"].rolling(20).mean()
-        df["MA60"] = df["Close"].rolling(60).mean()
-        df["MA400"] = df["Close"].rolling(400).mean()
+        df_full["MA5"] = df_full["Close"].rolling(5).mean()
+        df_full["MA20"] = df_full["Close"].rolling(20).mean()
+        df_full["MA60"] = df_full["Close"].rolling(60).mean()
+        df_full["MA400"] = df_full["Close"].rolling(long_term_settings["period"]).mean()
 
         # MA傾き（5期間の変化率）
-        df["MA5_slope"] = df["MA5"].diff(3)
-        df["MA20_slope"] = df["MA20"].diff(5)
-        df["MA60_slope"] = df["MA60"].diff(10)
-        df["MA400_slope"] = df["MA400"].diff(20)
+        df_full["MA5_slope"] = df_full["MA5"].diff(3)
+        df_full["MA20_slope"] = df_full["MA20"].diff(5)
+        df_full["MA60_slope"] = df_full["MA60"].diff(10)
+        df_full["MA400_slope"] = df_full["MA400"].diff(long_term_settings["slope"])
+        df_full.attrs["long_term_ma_label"] = long_term_settings["label"]
+
+        if display_bars is not None and len(df_full) > display_bars:
+            df = df_full.tail(display_bars).copy()
+        else:
+            df = df_full.copy()
+        df.attrs["long_term_ma_label"] = long_term_settings["label"]
 
         # 5MA方向（True=上向き, False=下向き）
         df["MA5_up"] = df["MA5_slope"] > 0
@@ -217,6 +229,40 @@ def fetch_stock_data(
         return None, symbol, ""
 
 
+def get_long_term_ma_settings(interval: str) -> dict:
+    """20ヶ月線相当の長期線設定を返す"""
+    settings = {
+        "1d": {"period": 400, "slope": 20, "label": "400日線"},
+        "1wk": {"period": 80, "slope": 4, "label": "80週線"},
+        "1mo": {"period": 20, "slope": 1, "label": "20ヶ月線"},
+    }
+    return settings.get(interval, settings["1d"])
+
+
+def get_min_fetch_period(period: str, interval: str) -> str:
+    """長期線計算に必要な最低取得期間"""
+    min_periods = {
+        "1d": "2y",
+        "1wk": "2y",
+        "1mo": "2y",
+    }
+    order = {"3mo": 0, "6mo": 1, "1y": 2, "2y": 3, "5y": 4}
+    minimum = min_periods.get(interval, "2y")
+    if order.get(period, 99) < order.get(minimum, 99):
+        return minimum
+    return period
+
+
+def get_display_bar_count(period: str, interval: str) -> Optional[int]:
+    """表示用に切り出す本数の目安"""
+    counts = {
+        "1d": {"3mo": 63, "6mo": 126, "1y": 252, "2y": 504, "5y": 1260},
+        "1wk": {"3mo": 13, "6mo": 26, "1y": 52, "2y": 104, "5y": 260},
+        "1mo": {"3mo": 3, "6mo": 6, "1y": 12, "2y": 24, "5y": 60},
+    }
+    return counts.get(interval, {}).get(period)
+
+
 # ────────────────────────────────────────────
 # トレンド分析
 # ────────────────────────────────────────────
@@ -224,6 +270,7 @@ def fetch_stock_data(
 def analyze_trend(df: pd.DataFrame) -> TrendResult:
     """Y式トレンド判定"""
     result = TrendResult()
+    result.long_term_ma_label = df.attrs.get("long_term_ma_label", "400日線")
 
     if len(df) < 60:
         return result
@@ -232,9 +279,12 @@ def analyze_trend(df: pd.DataFrame) -> TrendResult:
     prev = df.iloc[-5]  # 5日前と比較
 
     # 400日線の傾きと位置
-    if not pd.isna(last.get("MA400")):
-        result.ma400_up = float(df["MA400_slope"].iloc[-1]) > 0
-        result.price_above_ma400 = float(last["Close"]) > float(last["MA400"])
+    ma400_value = last.get("MA400")
+    ma400_slope = df["MA400_slope"].iloc[-1] if "MA400_slope" in df.columns else np.nan
+    if not pd.isna(ma400_value):
+        result.price_above_ma400 = float(last["Close"]) > float(ma400_value)
+    if not pd.isna(ma400_slope):
+        result.ma400_up = float(ma400_slope) > 0
 
     # MAの傾き
     result.ma5_slope = float(df["MA5_slope"].iloc[-1]) if not pd.isna(df["MA5_slope"].iloc[-1]) else 0
@@ -246,9 +296,9 @@ def analyze_trend(df: pd.DataFrame) -> TrendResult:
     ma20_up = result.ma20_slope > 0
     ma60_up = result.ma60_slope > 0
 
-    if result.price_above_ma400 and result.ma400_up and ma20_up:
+    if result.price_above_ma400 is True and result.ma400_up is True and ma20_up:
         result.phase = "上昇"
-    elif not result.price_above_ma400 and not result.ma400_up and not ma20_up:
+    elif result.price_above_ma400 is False and result.ma400_up is False and not ma20_up:
         result.phase = "下落"
     else:
         result.phase = "横ばい"
@@ -1200,6 +1250,7 @@ def run_full_analysis(
         indicators=indicators,
         recent_candlestick_patterns=recent_candlestick_patterns,
         candlestick_predictions=candlestick_predictions,
+        long_term_ma_label=df.attrs.get("long_term_ma_label", "400日線"),
     )
 
 
