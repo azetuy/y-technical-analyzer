@@ -14,7 +14,7 @@ from datetime import datetime
 
 from analyzer import (
     run_full_analysis, get_market_overview, calc_risk_reward,
-    detect_range_zones, AnalysisResult
+    detect_range_zones, analyze_recent_candlesticks, AnalysisResult
 )
 from chart import (
     create_main_chart, create_rr_gauge,
@@ -469,6 +469,13 @@ else:
         st.markdown('<div class="section-header">直近2本 + 次の1本予測</div>', unsafe_allow_html=True)
 
         recent_bars = result.df.iloc[-2:]
+        recent_candle_signals = getattr(result, "recent_candlestick_patterns", None)
+        predicted_candle_signals = getattr(result, "candlestick_predictions", None)
+        if recent_candle_signals is None or predicted_candle_signals is None:
+            recent_candle_signals, predicted_candle_signals = analyze_recent_candlesticks(result.df)
+            result.recent_candlestick_patterns = recent_candle_signals
+            result.candlestick_predictions = predicted_candle_signals
+
         bar_labels = []
         for idx, (_, row) in enumerate(recent_bars.iterrows(), start=1):
             is_up = float(row["Close"]) >= float(row["Open"])
@@ -486,25 +493,27 @@ else:
             )
         st.markdown("".join(bar_labels), unsafe_allow_html=True)
 
-        for signal in result.recent_candlestick_patterns:
+        for signal in recent_candle_signals:
             tone = "🎯" if signal.bias == "強気" else "⚠️" if signal.bias == "弱気" else "•"
             card_class = "pattern-detected" if signal.bias != "中立" else "pattern-none"
+            signal_text = getattr(signal, "signal_text", "")
             st.markdown(
                 f'<div class="{card_class}">{tone} <b>{signal.name}</b><br>'
-                f'<small style="color:#FFD700;">{signal.signal_text}</small><br>'
+                f'<small style="color:#FFD700;">{signal_text}</small><br>'
                 f'<small style="color:#8899AA;">{signal.description}<br>{signal.trigger}</small></div>',
                 unsafe_allow_html=True
             )
 
         st.markdown("**次の1本の予測条件**")
-        for signal in result.candlestick_predictions:
+        for signal in predicted_candle_signals:
             tone = "🟢" if signal.bias == "強気" else "🔴" if signal.bias == "弱気" else "⚪"
             border = "#00CC66" if signal.bias == "強気" else "#FF6666" if signal.bias == "弱気" else "#888888"
+            signal_text = getattr(signal, "signal_text", "")
             st.markdown(
                 f"""<div style="background:rgba(30,42,53,0.6); border-left:4px solid {border};
                 border-radius:8px; padding:10px; margin:6px 0;">
                 <div style="font-weight:bold;">{tone} {signal.name}</div>
-                <div style="font-size:12px; color:#FFD700; margin-top:4px;">{signal.signal_text}</div>
+                <div style="font-size:12px; color:#FFD700; margin-top:4px;">{signal_text}</div>
                 <div style="font-size:12px; color:#8899AA; margin-top:4px;">{signal.description}</div>
                 <div style="font-size:12px; color:{border}; margin-top:6px;">条件: {signal.trigger}</div>
                 </div>""",
