@@ -211,6 +211,55 @@ with st.sidebar:
 if "result" not in st.session_state:
     st.session_state.result = None
 
+
+def ensure_result_compatibility(result_obj):
+    """古い session_state に残った分析結果を現行表示に合わせる"""
+    if result_obj is None:
+        return None
+
+    if not hasattr(result_obj, "company_name") or result_obj.company_name is None:
+        result_obj.company_name = getattr(result_obj, "ticker", "")
+
+    if not hasattr(result_obj, "patterns") or result_obj.patterns is None:
+        result_obj.patterns = []
+
+    if not hasattr(result_obj, "support_resistance") or result_obj.support_resistance is None:
+        result_obj.support_resistance = []
+
+    if not hasattr(result_obj, "gaps") or result_obj.gaps is None:
+        result_obj.gaps = []
+
+    if not hasattr(result_obj, "indicators") or result_obj.indicators is None:
+        result_obj.indicators = {}
+
+    df_obj = getattr(result_obj, "df", None)
+    if df_obj is not None and not df_obj.empty:
+        if not hasattr(result_obj, "current_price") or not result_obj.current_price:
+            result_obj.current_price = float(df_obj["Close"].iloc[-1])
+
+        if not hasattr(result_obj, "stop_loss_price"):
+            if "MA5" in df_obj.columns and not pd.isna(df_obj["MA5"].iloc[-1]):
+                result_obj.stop_loss_price = float(df_obj["MA5"].iloc[-1])
+            else:
+                result_obj.stop_loss_price = 0.0
+
+        recent_candle_signals = getattr(result_obj, "recent_candlestick_patterns", None)
+        predicted_candle_signals = getattr(result_obj, "candlestick_predictions", None)
+        if recent_candle_signals is None or predicted_candle_signals is None:
+            recent_candle_signals, predicted_candle_signals = analyze_recent_candlesticks(df_obj)
+            result_obj.recent_candlestick_patterns = recent_candle_signals
+            result_obj.candlestick_predictions = predicted_candle_signals
+
+        for signal in getattr(result_obj, "recent_candlestick_patterns", []):
+            if not hasattr(signal, "signal_text"):
+                signal.signal_text = ""
+
+        for signal in getattr(result_obj, "candlestick_predictions", []):
+            if not hasattr(signal, "signal_text"):
+                signal.signal_text = ""
+
+    return result_obj
+
 if analyze_btn and ticker_input:
     with st.spinner(f"「{ticker_input}」を分析中..."):
         result = run_full_analysis(ticker_input, period=period, interval=interval)
@@ -225,6 +274,8 @@ if analyze_btn and ticker_input:
 # ────────────────────────────────────────────
 
 result: AnalysisResult = st.session_state.result
+result = ensure_result_compatibility(result)
+st.session_state.result = result
 
 if result is None:
     # ウェルカム画面
@@ -469,12 +520,8 @@ else:
         st.markdown('<div class="section-header">直近2本 + 次の1本予測</div>', unsafe_allow_html=True)
 
         recent_bars = result.df.iloc[-2:]
-        recent_candle_signals = getattr(result, "recent_candlestick_patterns", None)
-        predicted_candle_signals = getattr(result, "candlestick_predictions", None)
-        if recent_candle_signals is None or predicted_candle_signals is None:
-            recent_candle_signals, predicted_candle_signals = analyze_recent_candlesticks(result.df)
-            result.recent_candlestick_patterns = recent_candle_signals
-            result.candlestick_predictions = predicted_candle_signals
+        recent_candle_signals = result.recent_candlestick_patterns
+        predicted_candle_signals = result.candlestick_predictions
 
         bar_labels = []
         for idx, (_, row) in enumerate(recent_bars.iterrows(), start=1):
